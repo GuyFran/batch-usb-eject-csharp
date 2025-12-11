@@ -10,7 +10,6 @@ namespace UsbEjector
     /// <summary>
     /// UsbSafeRemoval: DeviceNumber matching + SetupAPI (x86/x64 safe)
     /// Debug level: Full verbose (3)
-    /// Adds detection of volumes mounted to NTFS folders (no drive letter).
     /// </summary>
     public static class UsbSafeRemoval
     {
@@ -24,7 +23,7 @@ namespace UsbEjector
         private const int DIGCF_PRESENT = 0x00000002;
         private const int DIGCF_DEVICEINTERFACE = 0x00000010;
 
-        // Disk class GUID - copy to local before passing to APIs
+        // Disk class GUID
         private static readonly Guid GUID_DEVINTERFACE_DISK =
             new Guid("53f56307-b6bf-11d0-94f2-00a0c91efb8b");
 
@@ -98,7 +97,6 @@ namespace UsbEjector
             ref Guid InterfaceClassGuid, uint MemberIndex,
             ref SP_DEVICE_INTERFACE_DATA DeviceInterfaceData);
 
-        // Use Unicode explicit entry and IntPtr for the last parameter to avoid ref/out binding issues
         [DllImport("setupapi.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "SetupDiGetDeviceInterfaceDetailW")]
         private static extern bool SetupDiGetDeviceInterfaceDetail_IntPtr(
             IntPtr DeviceInfoSet,
@@ -143,20 +141,14 @@ namespace UsbEjector
 
         // -------------------- Public API --------------------
 
-        /// <summary>
-        /// Get all USB storage drives including:
-        /// - drive letters (existing behavior)
-        /// - volumes mounted to NTFS folders (no drive letter) — displays mount folder path
-        /// </summary>
         public static List<UsbDriveInfo> GetUsbStorageDrives()
         {
             LOG("============== ENUM START ==============");
             var result = new List<UsbDriveInfo>();
 
-            // track drive letters we've already added (uppercase like "E:\")
             var seenRoots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            // 1) Existing logic: drives with letters
+            // 1) Lettered drives
             foreach (var d in DriveInfo.GetDrives())
             {
                 LOG($"> Drive {d.Name} Ready={d.IsReady} Type={d.DriveType}");
@@ -195,7 +187,7 @@ namespace UsbEjector
                 var drive = new UsbDriveInfo
                 {
                     IsSelected = false,
-                    DriveLetter = d.Name,                // e.g. "E:\"
+                    DriveLetter = d.Name,
                     VolumeLabel = d.VolumeLabel,
                     NtfsVolumeName = GetNtfsLabel(d.Name),
                     VendorId = vid,
@@ -209,31 +201,25 @@ namespace UsbEjector
                 LOG("  Added USB DRIVE (letter)");
             }
 
-            // 2) New logic: enumerate all volumes and find mount points that are NTFS folder mount points (no single-root drive letter)
+            // 2) Volumes mounted to folders
             foreach (var vol in EnumerateAllVolumes())
             {
-                // get mount paths for this volume
                 var mounts = GetVolumeMountPoints(vol);
                 if (mounts == null || mounts.Count == 0)
                     continue;
 
-                // find mount paths that are *not* simple root drive letters (e.g. "C:\Mounts\USB1\")
                 foreach (var mp in mounts)
                 {
-                    // Normalize trailing backslash
                     string mount = mp;
                     if (!mount.EndsWith("\\"))
-                        mount = mount + "\\";
+                        mount += "\\";
 
-                    // skip if this is a root drive letter like "E:\"
                     if (mount.Length == 3 && mount[1] == ':' && mount[2] == '\\')
                     {
-                        // this volume is already represented by a drive letter - skip (or it was added above)
                         LOG($"  Volume {vol} mount {mount} is root drive letter - skipped");
                         continue;
                     }
 
-                    // if mount path's root was already added as a drive letter representing the same volume, skip
                     string rootOfMount = Path.GetPathRoot(mount) ?? "";
                     if (!string.IsNullOrEmpty(rootOfMount) && seenRoots.Contains(rootOfMount.TrimEnd('\\').ToUpperInvariant() + @"\"))
                     {
@@ -241,7 +227,6 @@ namespace UsbEjector
                         continue;
                     }
 
-                    // Now open the volume (volume name like "\\?\Volume{GUID}\")
                     if (!TryGetDeviceNumber(vol, out var sdnum))
                     {
                         LOG($"  Could not get device number for volume {vol} (mount {mount})");
@@ -262,20 +247,18 @@ namespace UsbEjector
                     if (!usb)
                         continue;
 
-                    // Extract VID/PID
                     ExtractVidPidFromDevInst(devInst, out string vid2, out string pid2);
 
-                    // Build entry showing the mount folder path (user asked for A: show mount folder paths)
                     var driveInfo = new UsbDriveInfo
                     {
                         IsSelected = false,
-                        DriveLetter = null,               // no drive letter
-                        VolumeLabel = GetVolumeLabelFromMount(mount), // try get volume label via GetVolumeInformation using mount path
+                        DriveLetter = null,
+                        VolumeLabel = GetVolumeLabelFromMount(mount),
                         NtfsVolumeName = GetNtfsLabel(mount),
                         VendorId = vid2,
                         ProductId = pid2,
                         DevInst = devInst,
-                        MountedPath = mount               // custom field; ensure your UsbDriveInfo contains it (or store mount in VolumeLabel/NtfsVolumeName)
+                        MountedPath = mount
                     };
 
                     result.Add(driveInfo);
@@ -289,9 +272,6 @@ namespace UsbEjector
 
         // -------------------- Volume enumeration helpers --------------------
 
-        /// <summary>
-        /// Enumerate all volumes (\\?\Volume{GUID}\)
-        /// </summary>
         private static IEnumerable<string> EnumerateAllVolumes()
         {
             const int initialBuffer = 1024;
@@ -334,13 +314,8 @@ namespace UsbEjector
             }
         }
 
-        /// <summary>
-        /// Get all mount points for a volume (drive letters and NTFS mount folders).
-        /// Returns paths with trailing backslash, e.g. "C:\Mounts\USB1\"
-        /// </summary>
         private static List<string> GetVolumeMountPoints(string volumeName)
         {
-            // initial buffer
             uint bufLen = 1024;
             char[] buffer = new char[bufLen];
             bool ok = GetVolumePathNamesForVolumeNameW(volumeName, buffer, bufLen, out uint returnLen);
@@ -349,7 +324,6 @@ namespace UsbEjector
                 int err = Marshal.GetLastWin32Error();
                 if (err == 234 /* ERROR_MORE_DATA */)
                 {
-                    // allocate required size
                     bufLen = returnLen;
                     buffer = new char[bufLen];
                     ok = GetVolumePathNamesForVolumeNameW(volumeName, buffer, bufLen, out returnLen);
@@ -366,7 +340,6 @@ namespace UsbEjector
                 }
             }
 
-            // buffer contains multiple null-terminated strings end in double-null
             var mounts = new List<string>();
             int i = 0;
             var sb = new StringBuilder();
@@ -376,13 +349,9 @@ namespace UsbEjector
                 if (c == '\0')
                 {
                     if (sb.Length == 0)
-                    {
-                        // consecutive null => end
                         break;
-                    }
 
                     string path = sb.ToString();
-                    // ensure trailing backslash
                     if (!path.EndsWith("\\"))
                         path += "\\";
                     mounts.Add(path);
@@ -412,13 +381,6 @@ namespace UsbEjector
 
         // -------------------- IOCTL and SetupAPI helpers --------------------
 
-        /// <summary>
-        /// Get device number for a root path.
-        /// Handles:
-        ///  - drive root like "E:\"
-        ///  - volume GUID like "\\?\Volume{GUID}\"
-        /// This avoids blindly prefixing "\\.\" to strings that already start with "\\?\" or "\\.\"
-        /// </summary>
         private static bool TryGetDeviceNumber(string root, out STORAGE_DEVICE_NUMBER dev)
         {
             dev = new STORAGE_DEVICE_NUMBER();
@@ -426,18 +388,14 @@ namespace UsbEjector
             if (string.IsNullOrEmpty(root))
                 return false;
 
-            // Normalization: if root already starts with \\?\ or \\.\, use it directly.
-            // Otherwise prefix with \\.\ to open the volume/drive.
             string path;
             if (root.StartsWith(@"\\?\", StringComparison.OrdinalIgnoreCase) ||
                 root.StartsWith(@"\\.\", StringComparison.OrdinalIgnoreCase))
             {
-                // Trim trailing backslash for CreateFile compatibility
                 path = root.TrimEnd('\\');
             }
             else
             {
-                // root like "E:\" -> prefix to "\\.\E:"
                 path = @"\\.\" + root.TrimEnd('\\');
             }
 
@@ -451,12 +409,7 @@ namespace UsbEjector
                 return false;
             }
 
-            bool ok = DeviceIoControl(
-                h, IOCTL_STORAGE_GET_DEVICE_NUMBER,
-                IntPtr.Zero, 0,
-                out dev, Marshal.SizeOf<STORAGE_DEVICE_NUMBER>(),
-                out _, IntPtr.Zero);
-
+            bool ok = DeviceIoControl(h, IOCTL_STORAGE_GET_DEVICE_NUMBER, IntPtr.Zero, 0, out dev, Marshal.SizeOf<STORAGE_DEVICE_NUMBER>(), out _, IntPtr.Zero);
             int ioctlErr = Marshal.GetLastWin32Error();
             LOG($"  DeviceIoControl ok={ok} lastErr={ioctlErr} DeviceNumber={dev.DeviceNumber}");
 
@@ -464,9 +417,6 @@ namespace UsbEjector
             return ok;
         }
 
-        // Normalize and open device-interface or volume paths; works with:
-        //  - device interface strings like "?\scsi#disk&ven_...#{GUID}"
-        //  - full volume names like "\\?\Volume{GUID}\"
         private static bool TryGetDeviceNumberFromPath(string deviceInterfacePath, out STORAGE_DEVICE_NUMBER dev)
         {
             dev = new STORAGE_DEVICE_NUMBER();
@@ -474,12 +424,13 @@ namespace UsbEjector
             if (string.IsNullOrEmpty(deviceInterfacePath))
                 return false;
 
-            // Normalize: remove leading backslashes and '?' then prefix with \\?\
-            string trimmed = deviceInterfacePath.TrimStart('\\');
-            trimmed = trimmed.TrimStart('?');
-            trimmed = trimmed.TrimStart('\\');
-
-            string normalized = @"\\?\" + trimmed;
+            // Many device paths returned by SetupAPI are prefixed like "\\?\...". Normalize.
+            string normalized = deviceInterfacePath;
+            if (!normalized.StartsWith(@"\\", StringComparison.Ordinal))
+            {
+                // Some returned strings begin with "?" or other characters; attempt a safe normalization
+                normalized = @"\\?\" + normalized.TrimStart('\\', '?');
+            }
 
             LOG($"    Normalized interface path='{normalized}'");
 
@@ -493,12 +444,7 @@ namespace UsbEjector
 
             LOG($"    CreateFile(normalized) succeeded handle={h}");
 
-            bool ok = DeviceIoControl(
-                h, IOCTL_STORAGE_GET_DEVICE_NUMBER,
-                IntPtr.Zero, 0,
-                out dev, Marshal.SizeOf<STORAGE_DEVICE_NUMBER>(),
-                out _, IntPtr.Zero);
-
+            bool ok = DeviceIoControl(h, IOCTL_STORAGE_GET_DEVICE_NUMBER, IntPtr.Zero, 0, out dev, Marshal.SizeOf<STORAGE_DEVICE_NUMBER>(), out _, IntPtr.Zero);
             int ioctlErr = Marshal.GetLastWin32Error();
             LOG($"    DeviceIoControl IOCTL_STORAGE_GET_DEVICE_NUMBER ok={ok} lastErr={ioctlErr} DeviceNumber={dev.DeviceNumber}");
 
@@ -506,14 +452,12 @@ namespace UsbEjector
             return ok;
         }
 
-        // Use a local copy of GUID to avoid passing static readonly by ref
         private static uint FindDevInstFromDeviceNumber(uint targetDeviceNumber, out string instanceId)
         {
             instanceId = string.Empty;
             Guid localGuid = GUID_DEVINTERFACE_DISK;
 
-            IntPtr deviceInfoSet = SetupDiGetClassDevs(ref localGuid, IntPtr.Zero, IntPtr.Zero,
-                DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
+            IntPtr deviceInfoSet = SetupDiGetClassDevs(ref localGuid, IntPtr.Zero, IntPtr.Zero, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
 
             if (deviceInfoSet == IntPtr.Zero || deviceInfoSet == new IntPtr(-1))
             {
@@ -539,7 +483,6 @@ namespace UsbEjector
                         break;
                     }
 
-                    // First ask for required size
                     bool reqOk = SetupDiGetDeviceInterfaceDetail_IntPtr(deviceInfoSet, ref ifData, IntPtr.Zero, 0, out uint requiredSize, IntPtr.Zero);
                     int reqErr = Marshal.GetLastWin32Error();
                     LOG($"    SetupDiGetDeviceInterfaceDetail(required) ok={reqOk} requiredSize={requiredSize} lastErr={reqErr}");
@@ -562,9 +505,7 @@ namespace UsbEjector
                         devInfoUnmanaged = Marshal.AllocHGlobal(Marshal.SizeOf<SP_DEVINFO_DATA>());
                         Marshal.WriteInt32(devInfoUnmanaged, Marshal.SizeOf<SP_DEVINFO_DATA>());
 
-                        bool gotDetail = SetupDiGetDeviceInterfaceDetail_IntPtr(
-                            deviceInfoSet, ref ifData, detailBuffer, requiredSize, out requiredSize, devInfoUnmanaged);
-
+                        bool gotDetail = SetupDiGetDeviceInterfaceDetail_IntPtr(deviceInfoSet, ref ifData, detailBuffer, requiredSize, out requiredSize, devInfoUnmanaged);
                         int detailErr = Marshal.GetLastWin32Error();
                         LOG($"    SetupDiGetDeviceInterfaceDetail(fill) gotDetail={gotDetail} lastErr={detailErr}");
 
@@ -685,8 +626,6 @@ namespace UsbEjector
             }
         }
 
-        // -------------------- NTFS label --------------------
-
         private static string GetNtfsLabel(string root)
         {
             try
@@ -707,14 +646,150 @@ namespace UsbEjector
             }
         }
 
-        // -------------------- Eject --------------------
+        // -------------------- Eject (enhanced debug, auto-select USB parent) --------------------
 
+        /// <summary>
+        /// Attempts to find best ejectable devinst (USB parent) and requests eject.
+        /// Logs extensive debug info about failures.
+        /// </summary>
         public static bool RequestDeviceEject(uint devInst)
         {
+            LOG($"=== EJECT START requestedDevInst={devInst} ===");
+
+            // Determine the eject target (walk up to USB parent if possible)
+            uint target = GetEjectableUsbDevInst(devInst);
+            LOG($"Eject target devInst={target} (requested={devInst})");
+
+            // 1) Device instance id (friendly)
+            var idBuf = new StringBuilder(1024);
+            int idRes = CM_Get_Device_ID(target, idBuf, idBuf.Capacity, 0);
+            string devIdStr = (idRes == 0) ? idBuf.ToString() : "<unknown>";
+            LOG($"Target DevInst ID: {devIdStr} (CM_Get_Device_ID returned {idRes})");
+
+            // 2) Print device ancestry (parents) up to USB root for target
+            try
+            {
+                uint cur = target;
+                for (int depth = 0; depth < 20; depth++)
+                {
+                    var sb = new StringBuilder(512);
+                    if (CM_Get_Device_ID(cur, sb, sb.Capacity, 0) != 0)
+                        break;
+                    LOG($" ancestry[{depth}] = {sb}");
+
+                    if (CM_Get_Parent(out uint parent, cur, 0) != 0 || parent == 0)
+                        break;
+
+                    cur = parent;
+                }
+            }
+            catch (Exception ex)
+            {
+                LOG($"Failed to enumerate ancestry: {ex}");
+            }
+
+            // 3) VID/PID for additional context (from target or upward)
+            ExtractVidPidFromDevInst(target, out string vid, out string pid);
+            LOG($"VID={vid} PID={pid}");
+
+            // 4) Attempt eject
             var vetoName = new StringBuilder(512);
-            uint code = CM_Request_Device_Eject(devInst, out int vetoType, vetoName, vetoName.Capacity, 0);
-            LOG($"  RequestDeviceEject devInst={devInst} code={code} vetoType={vetoType} veto='{vetoName}'");
-            return code == 0 && vetoType == 0;
+            uint res = CM_Request_Device_Eject(target, out int vetoType, vetoName, vetoName.Capacity, 0);
+
+            int win32Err = Marshal.GetLastWin32Error();
+            LOG($"CM_Request_Device_Eject returned code={res} lastWin32Err={win32Err} vetoType={vetoType} vetoName='{vetoName}'");
+
+            // 5) Interpret results
+            string vetoText = TranslateVetoType(vetoType);
+            LOG($"Veto type text = {vetoText}");
+
+            if (res == 0 && vetoType == 0)
+            {
+                LOG($"EJECT SUCCESS targetDevInst={target}");
+                return true;
+            }
+
+            // 6) If failed, provide hints
+            LOG("EJECT FAILED — diagnosing...");
+
+            if (vetoName != null && vetoName.Length > 0)
+            {
+                LOG($"Veto name reported by CM_Request_Device_Eject: '{vetoName}'");
+            }
+
+            LOG($"Win32 error code after CM_Request_Device_Eject: {win32Err}");
+
+            LOG("Possible causes: Volume in use (file open / current working directory),\n" +
+                "filesystem caching, background service (indexer/scanner), driver refusing to detach, or illegal request when target is not ejectable.\n" +
+                "If vetoName looks like a process path, that process holds the volume. Try closing open handles.");
+
+            LOG($"=== EJECT END targetDevInst={target} success=False ===");
+            return false;
+        }
+
+        /// <summary>
+        /// Walks parent chain and returns the first devInst that looks like a USB device node suitable for eject.
+        /// If none found, returns the original devInst.
+        /// </summary>
+        public static uint GetEjectableUsbDevInst(uint devInst)
+        {
+            uint cur = devInst;
+
+            for (int depth = 0; depth < 50; depth++)
+            {
+                var sb = new StringBuilder(512);
+                if (CM_Get_Device_ID(cur, sb, sb.Capacity, 0) != 0)
+                    break;
+
+                string id = sb.ToString();
+                LOG($"GetEjectableUsbDevInst ancestor[{depth}] = {id}");
+
+                // Prefer usb device nodes which often start with "USB\VID_" or "USBSTOR\" or contain "VID_"
+                if (id.StartsWith("USB\\", StringComparison.OrdinalIgnoreCase) ||
+                    id.IndexOf("VID_", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    id.IndexOf("USBSTOR", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    LOG($"Found candidate ejectable node: {id} (devInst={cur})");
+                    return cur;
+                }
+
+                if (CM_Get_Parent(out uint parent, cur, 0) != 0 || parent == 0)
+                    break;
+
+                cur = parent;
+            }
+
+            LOG("No higher-level USB parent found; using original devInst as fallback");
+            return devInst;
+        }
+
+        private static string TranslateVetoType(int veto)
+        {
+            // CM_VETO_TYPE mapping, common values:
+            // 0 = PNP_VetoTypeUnknown
+            // 1 = PNP_VetoLegacyDevice
+            // 2 = PNP_VetoPendingClose
+            // 3 = PNP_VetoWindowsApp
+            // 4 = PNP_VetoWindowsService
+            // 5 = PNP_VetoOutstandingOpen
+            // 6 = PNP_VetoDevice
+            // 7 = PNP_VetoDriver
+            // 8 = PNP_VetoIllegalDeviceRequest
+            // 9 = PNP_VetoInsufficientPower
+            return veto switch
+            {
+                0 => "PNP_VetoTypeUnknown (0) — often success when 0 and no vetoName",
+                1 => "PNP_VetoLegacyDevice (1) — legacy driver or device prevented removal",
+                2 => "PNP_VetoPendingClose (2) — there's a pending close operation on the device",
+                3 => "PNP_VetoWindowsApp (3) — a Windows app prevented removal (open handle)",
+                4 => "PNP_VetoWindowsService (4) — a Windows service prevented removal",
+                5 => "PNP_VetoOutstandingOpen (5) — there are outstanding open handles to the device",
+                6 => "PNP_VetoDevice (6) — device refused request",
+                7 => "PNP_VetoDriver (7) — driver refused request",
+                8 => "PNP_VetoIllegalDeviceRequest (8) — illegal request for this device",
+                9 => "PNP_VetoInsufficientPower (9) — insufficient power to complete operation",
+                _ => $"Unknown veto type ({veto})"
+            };
         }
     }
 }
