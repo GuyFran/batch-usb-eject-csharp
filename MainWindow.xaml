@@ -1,28 +1,30 @@
 <Window x:Class="UsbEjector.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="USB Ejector (.NET 8)" Width="720" Height="450"
-        WindowStartupLocation="CenterScreen">
+        Title="USB Batch Ejector" Height="480" Width="700">
 
-    <Grid Margin="12">
+    <Grid Margin="10">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <Button Content="Refresh Drives"
-                Width="150" Height="32"
+        <!-- Refresh button -->
+        <Button Grid.Row="0" Content="Refresh Drives"
+                Width="140" Height="32"
+                Margin="0 0 0 10"
                 Click="Refresh_Click"/>
 
-        <ListView x:Name="DriveList"
+        <!-- LIST -->
+        <ListView x:Name="DrivesList"
                   Grid.Row="1"
-                  Margin="0,10,0,10"
-                  ItemsSource="{Binding Drives}">
-
+                  Margin="0 0 0 10"
+                  SelectionMode="Extended">
             <ListView.View>
                 <GridView>
-                    <GridViewColumn Width="40">
+
+                    <GridViewColumn Header="Select" Width="60">
                         <GridViewColumn.CellTemplate>
                             <DataTemplate>
                                 <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"/>
@@ -30,31 +32,22 @@
                         </GridViewColumn.CellTemplate>
                     </GridViewColumn>
 
-                    <GridViewColumn Header="Drive" Width="70"
-                                    DisplayMemberBinding="{Binding DriveLetter}"/>
+                    <GridViewColumn Header="Mount" DisplayMemberBinding="{Binding DriveLetter}" Width="80"/>
+                    <GridViewColumn Header="NTFS Mount Path" DisplayMemberBinding="{Binding MountedPath}" Width="200"/>
+                    <GridViewColumn Header="Label" DisplayMemberBinding="{Binding VolumeLabel}" Width="120"/>
 
-                    <GridViewColumn Header="Label" Width="120"
-                                    DisplayMemberBinding="{Binding VolumeLabel}"/>
+                    <GridViewColumn Header="VID" DisplayMemberBinding="{Binding VendorId}" Width="60"/>
+                    <GridViewColumn Header="PID" DisplayMemberBinding="{Binding ProductId}" Width="60"/>
 
-                    <GridViewColumn Header="NTFS Name" Width="120"
-                                    DisplayMemberBinding="{Binding NtfsVolumeName}"/>
-
-                    <GridViewColumn Header="VID" Width="70"
-                                    DisplayMemberBinding="{Binding VendorId}"/>
-
-                    <GridViewColumn Header="PID" Width="70"
-                                    DisplayMemberBinding="{Binding ProductId}"/>
-
-                    <GridViewColumn Header="DevInst" Width="150"
-                                    DisplayMemberBinding="{Binding DevInst}"/>
                 </GridView>
             </ListView.View>
-
         </ListView>
 
+        <!-- Eject button -->
         <Button Grid.Row="2"
-                Content="Safely Remove Selected"
-                Height="40"
+                Content="Eject Selected"
+                Width="150" Height="36"
+                HorizontalAlignment="Right"
                 Click="Eject_Click"/>
     </Grid>
 </Window>

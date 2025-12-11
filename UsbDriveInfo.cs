@@ -2,44 +2,28 @@ namespace UsbEjector
 {
     public class UsbDriveInfo
     {
-        /// <summary>
-        /// Whether user selected this drive in the UI.
-        /// </summary>
         public bool IsSelected { get; set; }
 
-        /// <summary>
-        /// Drive letter (e.g. "E:\"), or null if mounted to folder only.
-        /// </summary>
-        public string DriveLetter { get; set; }
+        public string? DriveLetter { get; set; }       // E:\ or null
+        public string? MountedPath { get; set; }        // C:\MOUNTS\ANIME1\ or null
 
-        /// <summary>
-        /// Volume label from filesystem.
-        /// </summary>
-        public string VolumeLabel { get; set; }
+        public string? VolumeLabel { get; set; }
+        public string? NtfsVolumeName { get; set; }
 
-        /// <summary>
-        /// NTFS volume label OR mount name.
-        /// </summary>
-        public string NtfsVolumeName { get; set; }
+        public string? VendorId { get; set; }
+        public string? ProductId { get; set; }
 
-        /// <summary>
-        /// Vendor ID (VID).
-        /// </summary>
-        public string VendorId { get; set; }
-
-        /// <summary>
-        /// Product ID (PID).
-        /// </summary>
-        public string ProductId { get; set; }
-
-        /// <summary>
-        /// Config Manager devInst for eject operation.
-        /// </summary>
         public uint DevInst { get; set; }
 
-        /// <summary>
-        /// Folder mount path (e.g. "C:\Mounts\USB1\"), null for letter drives.
-        /// </summary>
-        public string MountedPath { get; set; }
+        public string DisplayName
+        {
+            get
+            {
+                string mount = DriveLetter ?? MountedPath ?? "<no mount>";
+                string label = !string.IsNullOrEmpty(VolumeLabel) ? $" ({VolumeLabel})" : "";
+                string pidvid = $" [{VendorId}:{ProductId}]";
+                return mount + label + pidvid;
+            }
+        }
     }
 }

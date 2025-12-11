@@ -1,26 +1,25 @@
-using System.Collections.ObjectModel;
+using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
+using UsbEjector;
 
 namespace UsbEjector
 {
     public partial class MainWindow : Window
     {
-        public ObservableCollection<UsbDriveInfo> Drives { get; set; }
-            = new ObservableCollection<UsbDriveInfo>();
+        private List<UsbDriveInfo> Drives = new();
 
         public MainWindow()
         {
             InitializeComponent();
-            DataContext = this;
             RefreshDriveList();
         }
 
         private void RefreshDriveList()
         {
-            Drives.Clear();
-            foreach (var d in UsbSafeRemoval.GetUsbStorageDrives())
-                Drives.Add(d);
+            Drives = UsbSafeRemoval.GetUsbStorageDrives();
+            DrivesList.ItemsSource = Drives;
+            DrivesList.Items.Refresh();
         }
 
         private void Refresh_Click(object sender, RoutedEventArgs e)
@@ -38,13 +37,15 @@ namespace UsbEjector
                 return;
             }
 
-            foreach (var drive in selected)
+            foreach (var drv in selected)
             {
-                bool ok = UsbSafeRemoval.RequestDeviceEject(drive.DevInst);
+                bool ok = UsbSafeRemoval.RequestDeviceEject(drv.DevInst);
+
+                string mount = drv.DriveLetter ?? drv.MountedPath ?? "<unknown>";
 
                 MessageBox.Show(ok
-                    ? $"✔ Ejected {drive.DriveLetter}"
-                    : $"✖ Failed to eject {drive.DriveLetter}");
+                    ? $"Safely removed: {mount}"
+                    : $"Failed to eject: {mount}");
             }
 
             RefreshDriveList();
