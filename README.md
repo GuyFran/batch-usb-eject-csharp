@@ -1,20 +1,12 @@
-# UsbEjector (.NET 8 WPF) - Full Project (Option B)
+# USB Batch Ejector
 
-## What you got
-- Visual Studio solution and project targeting **.NET 8** (WPF)
-- UI to select multiple USB Mass Storage drives and safely remove them
-- Shows Drive Letter, Volume Label, NTFS Name, Vendor ID (VID) and Product ID (PID)
-- Uses `CM_Request_Device_Eject` to request safe removal (requires Admin)
+A small Windows tool (WPF, .NET 8) that safely removes several USB drives in one go.
 
-## Build
-```bash
-dotnet build -c Release
-```
+- Lists USB mass-storage (`USBSTOR`) drives: drive letter, NTFS folder mount path (drives mounted into a folder
+  instead of a letter), volume label, vendor and product IDs.
+- Tick the drives to remove and click **Eject Selected**; each one gets a Windows safe-removal request
+  (`CM_Request_Device_Eject`).
+- If Windows refuses (a file is open on the drive, for example), the tool reports "Failed to eject"; the reason is
+  not shown yet.
 
-## Run
-- Run the executable as **Administrator** (required to request eject)
-- Or open `UsbEjector.sln` in Visual Studio 2022/2023 and run
-
-## Notes
-- The app filters to `USBSTOR` devices (typical USB mass storage)
-- If a drive cannot be ejected, the system may show a veto reason (not surfaced in UI)
+Build, status, version and backlog: see [`AGENTS.md`](AGENTS.md).
