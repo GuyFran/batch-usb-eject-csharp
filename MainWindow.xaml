@@ -22,7 +22,7 @@
                   Margin="0 0 0 10"
                   SelectionMode="Extended">
             <ListView.View>
-                <GridView>
+                <GridView x:Name="DrivesGridView">
 
                     <GridViewColumn Header="Select" Width="60">
                         <GridViewColumn.CellTemplate>

@@ -7,11 +7,20 @@ namespace UsbEjector
 {
     public partial class MainWindow : Window
     {
+        public const string AppVersion = "1.0.1";
+
         private List<UsbDriveInfo> Drives = new();
+        private readonly LayoutPersistence layout;
 
         public MainWindow()
         {
             InitializeComponent();
+            Title = $"USB Batch Ejector v{AppVersion}";
+
+            layout = new LayoutPersistence(UiLayoutStore.PathFor("UsbEjector"), Dispatcher);
+            WindowGeometry.Track(this, "Main", layout);
+            GridViewLayout.Track(DrivesGridView, "DrivesList", layout);
+
             RefreshDriveList();
         }
 
