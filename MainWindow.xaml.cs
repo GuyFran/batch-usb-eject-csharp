@@ -7,7 +7,7 @@ namespace UsbEjector
 {
     public partial class MainWindow : Window
     {
-        public const string AppVersion = "1.0.1";
+        public const string AppVersion = "1.0.2";
 
         private List<UsbDriveInfo> Drives = new();
         private readonly LayoutPersistence layout;
