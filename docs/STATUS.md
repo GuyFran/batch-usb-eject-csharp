@@ -8,7 +8,7 @@ Checked against the code on 2026-11-24.
 
 | Item | State |
 |---|---|
-| Version | **1.0.2**, `AppVersion` in `MainWindow.xaml.cs`. No mirror in `.csproj` |
+| Version | **1.0.3**, `AppVersion` in `MainWindow.xaml.cs`. No mirror in `.csproj` |
 | Where it shows | Window title only. There is no status bar yet (B2) |
 | Project state | Dormant, no active work stream |
 | Build | **Not run in this pass.** Last recorded: 2026-11-04, 0 errors and 6 CS8632 warnings, on a commit before 1.0.1 |
@@ -41,3 +41,5 @@ Launching follows the global Verification rule (last resort). Ejection can only 
 | [UI_UX.md](UI_UX.md) | The window as built, behaviour and known gaps |
 | [BACKLOG.md](BACKLOG.md) | Open and done items |
 | [CHANGELOG.md](CHANGELOG.md) | Version history |
+
+UI persistence (every window, grid, list, scroll area and option, and what is kept): [UI_PERSISTENCE.md](UI_PERSISTENCE.md). 1.0.3 built in Release, 0 errors (2026-11-25); not launched.

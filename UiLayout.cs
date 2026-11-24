@@ -26,6 +26,10 @@ public sealed class UiLayout
     public Dictionary<string, WindowGeometryState> Windows { get; set; } = new();
     public Dictionary<string, GridLayoutState> Grids { get; set; } = new();
     public Dictionary<string, int> Tabs { get; set; } = new();
+    /// <summary>Scroll offsets [vertical, horizontal] per scroll area (1.0.3).</summary>
+    public Dictionary<string, double[]> Scroll { get; set; } = new();
+    /// <summary>On / off view toggles and picked view values per key (1.0.3).</summary>
+    public Dictionary<string, string> Values { get; set; } = new();
 }
 
 public sealed class WindowGeometryState
@@ -73,6 +77,10 @@ public static class UiLayoutStore
             layout.Windows ??= new();
             layout.Grids ??= new();
             layout.Tabs ??= new();
+            layout.Scroll ??= new();
+            layout.Values ??= new();
+            foreach (var key in layout.Scroll.Where(p => p.Value is not { Length: 2 } v || v.Any(x => !double.IsFinite(x) || x < 0)).Select(p => p.Key).ToList())
+                layout.Scroll.Remove(key);
             foreach (var key in layout.Windows.Where(p => p.Value is null || !IsSane(p.Value)).Select(p => p.Key).ToList())
                 layout.Windows.Remove(key);
             return layout;
@@ -461,5 +469,66 @@ public static class GridViewLayout
         foreach (var column in keys.Keys)
             WidthDescriptor.AddValueChanged(column, (_, _) => Capture());
         view.Columns.CollectionChanged += (_, _) => Capture();
+    }
+}
+
+// Saves and restores a scroll position (1.0.3): a ScrollViewer itself, or the one inside a DataGrid /
+// ListView / ListBox / TreeView. Only a scroll the user made is saved; the saved offset is put back once
+// the content is long enough to reach it (lists fill a moment after start), and given up after 8 s.
+public static class ScrollLayout
+{
+    public static void Track(FrameworkElement element, string key, LayoutPersistence persistence)
+    {
+        ScrollViewer? sv = null;
+        double[]? pending = null;
+        var since = DateTime.UtcNow;
+        var applying = false;
+
+        void TryApply()
+        {
+            if (sv is null || pending is null) return;
+            if (DateTime.UtcNow - since > TimeSpan.FromSeconds(8)) { pending = null; return; }
+            if (sv.ScrollableHeight + 0.5 < pending[0] || sv.ScrollableWidth + 0.5 < pending[1]) return;
+            var want = pending;
+            pending = null;
+            applying = true;
+            sv.ScrollToVerticalOffset(want[0]);
+            sv.ScrollToHorizontalOffset(want[1]);
+            sv.Dispatcher.InvokeAsync(() => applying = false, DispatcherPriority.Background);
+        }
+
+        element.Loaded += (_, _) =>
+        {
+            if (sv is not null) return;
+            sv = element as ScrollViewer ?? FindScrollViewer(element);
+            if (sv is null) return;
+            if (persistence.Layout.Scroll.TryGetValue(key, out var saved) && saved is { Length: 2 } && (saved[0] > 0 || saved[1] > 0))
+                pending = saved;
+            since = DateTime.UtcNow;
+            TryApply();
+            sv.ScrollChanged += (_, e) =>
+            {
+                if (!ReferenceEquals(e.OriginalSource, sv)) return;
+                if (pending is not null)
+                {
+                    // the user scrolled before the saved place could be reached: theirs wins
+                    if ((e.VerticalChange != 0 || e.HorizontalChange != 0) && e.ExtentHeightChange == 0 && e.ViewportHeightChange == 0)
+                        pending = null;
+                    else { TryApply(); return; }
+                }
+                if (applying || (e.VerticalChange == 0 && e.HorizontalChange == 0)) return;
+                if (e.ExtentHeightChange != 0 || e.ViewportHeightChange != 0 || e.ExtentWidthChange != 0 || e.ViewportWidthChange != 0) return;
+                persistence.Layout.Scroll[key] = new[] { sv.VerticalOffset, sv.HorizontalOffset };
+                persistence.Changed();
+            };
+        };
+    }
+
+    private static ScrollViewer? FindScrollViewer(DependencyObject root)
+    {
+        if (root is ScrollViewer s) return s;
+        for (var i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(root); i++)
+            if (FindScrollViewer(System.Windows.Media.VisualTreeHelper.GetChild(root, i)) is { } found) return found;
+        return null;
     }
 }

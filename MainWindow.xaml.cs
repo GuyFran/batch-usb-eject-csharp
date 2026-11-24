@@ -7,7 +7,7 @@ namespace UsbEjector
 {
     public partial class MainWindow : Window
     {
-        public const string AppVersion = "1.0.2";
+        public const string AppVersion = "1.0.3";
 
         private List<UsbDriveInfo> Drives = new();
         private readonly LayoutPersistence layout;
@@ -20,6 +20,7 @@ namespace UsbEjector
             layout = new LayoutPersistence(UiLayoutStore.PathFor("UsbEjector"), Dispatcher);
             WindowGeometry.Track(this, "Main", layout);
             GridViewLayout.Track(DrivesGridView, "DrivesList", layout);
+            ScrollLayout.Track(DrivesList, "DrivesList", layout);   // 1.0.3: the list keeps its scroll position
 
             RefreshDriveList();
         }
